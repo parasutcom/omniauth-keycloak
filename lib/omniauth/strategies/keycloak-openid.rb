@@ -103,9 +103,11 @@ module OmniAuth
                     options[key] = request.params[key.to_s] if [key].nil?
                 end
 
-                if request.params['login_hint']
-                    options.authorize_params[:login_hint] = request.params['login_hint']
-                end
+                if request.params['custom_params']
+                    request.params['custom_params'].each do |key, value|
+                      options.authorize_params[key] = value
+                    end
+                  end
 
                 super
             end
