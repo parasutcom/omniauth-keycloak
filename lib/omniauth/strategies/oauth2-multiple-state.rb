@@ -21,7 +21,7 @@ module OmniAuth
       STATE_TTL = 15 * 60
 
       def state_secret
-        ENV.fetch("OAUTH_STATE_SECRET")
+        Rails.application.secrets.omniauth_state_key
       end
 
       def b64url_encode(bytes)
@@ -173,7 +173,7 @@ module OmniAuth
         when :csrf_expired
           return fail_with_error(:csrf_expired, request.params)       # likely bookmark
         when :csrf_mismatch
-          return fail_with_error(:csrf_detected, request.params)      # mismatch (bookmark/probe)
+          return fail_with_error(:csrf_mismatch, request.params)      # mismatch (bookmark/probe)
         else
           return fail_with_error(:csrf_detected, request.params)
         end
