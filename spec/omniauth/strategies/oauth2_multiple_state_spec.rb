@@ -28,11 +28,13 @@ RSpec.describe OmniAuth::Strategies::OAuth2MultipleState do
     before do
       states = (1..5).map { |i| "state#{i}" }
       origins = (1..5).map { |i| ["state#{i}", 'origin'] }.to_h
+      verifiers = (1..5).map { |i| ["state#{i}", "verifier#{i}"] }.to_h
 
       allow(subject).to receive(:session).and_return({
                                                        'omniauth.origin' => 'origin',
                                                        'omniauth.states' => states,
-                                                       'omniauth.state_origins' => origins
+                                                       'omniauth.state_origins' => origins,
+                                                       'pkce.code_verifiers' => verifiers
                                                      })
 
       allow(subject).to receive(:env).and_return({})
@@ -64,6 +66,35 @@ RSpec.describe OmniAuth::Strategies::OAuth2MultipleState do
                                                                 'state5' => 'origin',
                                                                 'state6' => 'origin'
                                                               })
+    end
+
+    it 'stores the pkce code_verifier keyed by state, not a single shared key' do
+      allow(SecureRandom).to receive(:hex).and_return('state6')
+      subject.authorize_params
+
+      expect(subject.session['pkce.code_verifiers']['state6']).to be_a(String)
+      # the previously-stored verifiers for other in-flight states must survive
+      expect(subject.session['pkce.code_verifiers']['state5']).to eq('verifier5')
+    end
+
+    it 'does not clobber an in-flight verifier when a second authorize request starts before the first callback returns' do
+      allow(SecureRandom).to receive(:hex).and_return('state_a')
+      subject.authorize_params
+      first_verifier = subject.session['pkce.code_verifiers']['state_a']
+
+      allow(SecureRandom).to receive(:hex).and_return('state_b')
+      subject.authorize_params
+
+      expect(subject.session['pkce.code_verifiers']['state_a']).to eq(first_verifier)
+      expect(subject.session['pkce.code_verifiers']['state_b']).not_to eq(first_verifier)
+    end
+
+    it 'trims pkce.code_verifiers to the last 5 entries' do
+      allow(SecureRandom).to receive(:hex).and_return('state6')
+      subject.authorize_params
+
+      expect(subject.session['pkce.code_verifiers'].length).to eq(5)
+      expect(subject.session['pkce.code_verifiers'].keys).to eq(%w[state2 state3 state4 state5 state6])
     end
   end
 

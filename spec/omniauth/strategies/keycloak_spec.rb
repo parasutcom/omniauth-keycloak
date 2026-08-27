@@ -162,6 +162,46 @@ RSpec.describe OmniAuth::Strategies::KeycloakOpenId do
     end
   end
 
+  describe '#build_access_token' do
+    subject do
+      OmniAuth::Strategies::KeycloakOpenId.new('keycloak-openid', 'Example-Client', 'b53c572b-9f3b-4e79-bf8b-f03c799ba6ec',
+        client_options: {site: 'http://localhost:8080/', realm: 'example-realm'})
+    end
+
+    let(:request) { instance_double('ActionDispatch::Request', params: { 'code' => 'auth_code', 'state' => 'state_b' }) }
+    let(:oauth_client) { instance_double(OAuth2::Client) }
+    let(:auth_code_strategy) { instance_double(OAuth2::Strategy::AuthCode) }
+
+    before do
+      allow(subject).to receive(:request).and_return(request)
+      allow(subject).to receive(:callback_url).and_return('http://localhost:3000/auth/keycloak-openid/callback')
+      # Two authorize requests are in flight in the same session (e.g. two tabs); each
+      # state keeps its own verifier instead of the second overwriting the first.
+      allow(subject).to receive(:session).and_return({
+        'pkce.code_verifiers' => { 'state_a' => 'verifier_a', 'state_b' => 'verifier_b' }
+      })
+      allow(subject).to receive(:client).and_return(oauth_client)
+      allow(oauth_client).to receive(:auth_code).and_return(auth_code_strategy)
+      allow(auth_code_strategy).to receive(:get_token)
+    end
+
+    it "uses the verifier stored for the callback's own state" do
+      subject.build_access_token
+
+      expect(auth_code_strategy).to have_received(:get_token).with(
+        'auth_code',
+        hash_including(code_verifier: 'verifier_b'),
+        anything
+      )
+    end
+
+    it "consumes only that state's verifier, leaving the other in-flight attempt untouched" do
+      subject.build_access_token
+
+      expect(subject.session['pkce.code_verifiers']).to eq({ 'state_a' => 'verifier_a' })
+    end
+  end
+
   describe 'errors processing' do
     context 'when site contains /auth part' do
       subject do

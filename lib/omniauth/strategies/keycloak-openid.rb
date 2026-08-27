@@ -92,8 +92,8 @@ module OmniAuth
 
             def build_access_token
                 verifier = request.params["code"]
-                code_verifier = session.delete("pkce.code_verifier")
-                
+                code_verifier = session["pkce.code_verifiers"] && session["pkce.code_verifiers"].delete(request.params["state"])
+
                 client.auth_code.get_token(verifier,
                     {:redirect_uri => callback_url.gsub(/\?.+\Z/, ""), :code_verifier => code_verifier}
                     .merge(token_params.to_hash(:symbolize_keys => true)),
