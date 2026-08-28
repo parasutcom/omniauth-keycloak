@@ -55,7 +55,12 @@ module OmniAuth
         params = options.authorize_params.merge(options_for("authorize"))
 
         code_verifier, code_challenge = generate_pkce_pair
-        session["pkce.code_verifier"] = code_verifier
+        # Keyed by state (like omniauth.state_origins below), not a single session key: a
+        # single key gets overwritten when a second authorize request starts in the same
+        # session before the first callback returns (e.g. two tabs, or an app auto-retrying
+        # a login redirect), which then fails the first request's PKCE check at Keycloak.
+        session["pkce.code_verifiers"] ||= {}
+        session["pkce.code_verifiers"][params[:state]] = code_verifier
         params[:code_challenge] = code_challenge
         params[:code_challenge_method] = "S256"
 
@@ -77,6 +82,7 @@ module OmniAuth
         session['omniauth.states'] = session['omniauth.states'].last(5) if session["omniauth.states"].length > 5
         session['omniauth.state_origins'] = session['omniauth.state_origins'].to_a.last(5).to_h if session["omniauth.state_origins"].length > 5
         session['omniauth.state_kc_actions'] = session['omniauth.state_kc_actions'].to_a.last(5).to_h if session["omniauth.state_kc_actions"] && session["omniauth.state_kc_actions"].length > 5
+        session['pkce.code_verifiers'] = session['pkce.code_verifiers'].to_a.last(5).to_h if session["pkce.code_verifiers"].length > 5
 
         params
       end
