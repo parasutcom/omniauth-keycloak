@@ -16,6 +16,8 @@ module OmniAuth
     class OAuth2MultipleState
       include OmniAuth::Strategy
 
+      MAX_PENDING_STATES = 3
+
       def self.inherited(subclass)
         OmniAuth::Strategy.included(subclass)
       end
@@ -55,7 +57,7 @@ module OmniAuth
         params = options.authorize_params.merge(options_for("authorize"))
 
         code_verifier, code_challenge = generate_pkce_pair
-        # Keyed by state (like omniauth.state_origins below), not a single session key: a
+        # Keyed by state (like omniauth.states below), not a single session key: a
         # single key gets overwritten when a second authorize request starts in the same
         # session before the first callback returns (e.g. two tabs, or an app auto-retrying
         # a login redirect), which then fails the first request's PKCE check at Keycloak.
@@ -71,18 +73,18 @@ module OmniAuth
         session["omniauth.states"] ||= []
         session["omniauth.states"] << params[:state]
 
-        session["omniauth.state_origins"] ||= {}
-        session["omniauth.state_origins"][params[:state]] = session['omniauth.origin']
-
         if params[:kc_action]
           session["omniauth.state_kc_actions"] ||= {}
           session["omniauth.state_kc_actions"][params[:state]] = params[:kc_action]
         end
 
-        session['omniauth.states'] = session['omniauth.states'].last(5) if session["omniauth.states"].length > 5
-        session['omniauth.state_origins'] = session['omniauth.state_origins'].to_a.last(5).to_h if session["omniauth.state_origins"].length > 5
-        session['omniauth.state_kc_actions'] = session['omniauth.state_kc_actions'].to_a.last(5).to_h if session["omniauth.state_kc_actions"] && session["omniauth.state_kc_actions"].length > 5
-        session['pkce.code_verifiers'] = session['pkce.code_verifiers'].to_a.last(5).to_h if session["pkce.code_verifiers"].length > 5
+        session.delete("omniauth.origin")
+        session.delete("omniauth.state_origins")
+        session.delete("pkce.code_verifier")
+
+        session['omniauth.states'] = session['omniauth.states'].last(MAX_PENDING_STATES)
+        session['pkce.code_verifiers'] = session['pkce.code_verifiers'].slice(*session['omniauth.states'])
+        session['omniauth.state_kc_actions'] = session['omniauth.state_kc_actions'].slice(*session['omniauth.states']) if session["omniauth.state_kc_actions"]
 
         params
       end
@@ -106,10 +108,6 @@ module OmniAuth
           session["omniauth.kc_action_status"] = request.params["kc_action_status"]
         end
         
-        if session["omniauth.state_origins"] && request.params["state"]
-          env["omniauth.origin"] = session["omniauth.state_origins"].delete(request.params["state"])
-        end
-
         if session["omniauth.state_kc_actions"] && request.params["state"]
           kc_action = session["omniauth.state_kc_actions"].delete(request.params["state"])
           session["omniauth.kc_action"] = kc_action if kc_action
